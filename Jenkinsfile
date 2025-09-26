@@ -8,7 +8,7 @@ pipeline {
 
   // If you use the Jenkins "NodeJS" plugin, set this name to match your installation (Manage Jenkins > Tools).
   tools {
-    nodejs 'Node_24'   // <-- change if your NodeJS tool has a different name
+    nodejs 'node20'   // <-- change if your NodeJS tool has a different name
   }
 
   environment {
