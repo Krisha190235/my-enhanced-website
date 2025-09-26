@@ -2,8 +2,8 @@ pipeline {
   agent any
 
   tools {
-    // 👇 This tells Jenkins to use the NodeJS installation you configured under Manage Jenkins → Tools
-    nodejs 'node20'  // <-- change 'node20' if you gave it a different name
+    // Make sure you've set this up under Manage Jenkins → Tools → NodeJS installations
+    nodejs 'node20'
   }
 
   options {
@@ -38,8 +38,8 @@ pipeline {
           set -e
           echo "🔧 Using Node version: $(node -v)"
           echo "🔧 Using npm version: $(npm -v)"
-          npm ci
-          npm run build
+          npm ci --include=dev
+          npx vite build
         '''
       }
       post {
