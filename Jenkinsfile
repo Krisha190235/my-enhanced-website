@@ -19,7 +19,7 @@ pipeline {
     APP_NAME = 'bookstore-app'
     STAGING_NAME = 'bookstore-staging'
     PROD_NAME = 'bookstore-prod'
-    STAGING_PORT = '8082'
+    STAGING_PORT = '8090'
     PROD_PORT = '9090'
     NODE_ENV = 'production'
   }
