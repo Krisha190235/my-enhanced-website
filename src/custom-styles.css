@@ -1,0 +1,45 @@
+/* Custom Button Styles */
+button,
+.btn {
+    background-color: #007bff;
+    color: white;
+    font-size: 1rem;
+    padding: 10px 20px;
+    border-radius: 5px;
+    border: none;
+}
+
+button:hover,
+.btn:hover {
+    background-color: #0056b3;
+    cursor: pointer;
+}
+
+/* Form Styling */
+form .form-control {
+    border: 1px solid #ccc;
+    padding: 10px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+}
+
+form .form-control:focus {
+    border-color: #007bff;
+    box-shadow: 0 0 5px rgba(0, 123, 255, 0.25);
+}
+
+form .form-label {
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+/* Responsive Styling */
+@media (max-width: 768px) {
+    header .navbar-brand {
+        font-size: 1.2rem;
+    }
+
+    footer {
+        padding: 15px 0;
+    }
+}

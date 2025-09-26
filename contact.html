@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contact Us</title>
+    <!-- Import Vue.js -->
+    <script src="https://unpkg.com/vue@next"></script>
+    <!-- Add your custom CSS styles here -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div id="app">
+        <contact-us-page @formSubmitted="handleFormSubmit"></contact-us-page>
+    </div>
+
+    <!-- Import the main Vue component -->
+    <script type="module">
+        import { createApp } from 'vue';
+        import ContactUsPage from './ContactUsPage.vue'; // Ensure the path matches your setup
+
+        const app = createApp({
+            methods: {
+                handleFormSubmit(formData) {
+                    // Handle form data received from child component
+                    console.log('Form Data:', formData);
+                }
+            }
+        });
+
+        app.component('contact-us-page', ContactUsPage);
+        app.mount('#app');
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,27 @@
+{
+  "name": "my-enhanced-website",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "clean": "rm -rf dist",
+    "dev": "vite",
+    "serve": "vue-cli-service serve",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "bootstrap": "^5.3.3",
+    "firebase": "^12.3.0",
+    "pinia": "^2.2.2",
+    "vue": "^3.5.12",
+    "vue-router": "^4.4.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.1.4",
+    "@vue/cli-service": "^3.3.1",
+    "@vue/compiler-sfc": "^3.5.9",
+    "vite": "^5.4.1",
+    "vue-loader": "^17.3.1"
+  }
+}
