@@ -11,4 +11,4 @@ RUN npm run build
 
 # Serve with Vite's built-in preview server
 EXPOSE 4173
-CMD ["npm", "run", "preview"]
+CMD ["npm", "start"]

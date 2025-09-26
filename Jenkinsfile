@@ -88,7 +88,15 @@ pipeline {
 
     stage('Smoke Check (Staging)') {
       steps {
-        sh 'curl -sSf http://localhost:${STAGING_PORT} >/dev/null'
+        script {
+          retry(5) {
+            sh '''
+            echo "⏳ Waiting for app to be ready..."
+            sleep 5
+            curl -sSf http://localhost:${STAGING_PORT} >/dev/null
+          '''
+          }
+        }
       }
     }
 

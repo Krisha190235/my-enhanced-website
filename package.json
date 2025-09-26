@@ -8,7 +8,9 @@
     "dev": "vite",
     "serve": "vue-cli-service serve",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "vite preview --host 0.0.0.0"
+
   },
   "dependencies": {
     "bootstrap": "^5.3.3",
