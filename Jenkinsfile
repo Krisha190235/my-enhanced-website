@@ -11,6 +11,7 @@ pipeline {
     STAGING_URL = 'http://localhost:8090'
     PROD_URL    = 'http://localhost:9090'
     APP_IMAGE   = 'bookstore-app'
+    COMPOSE_IMG = 'docker/compose:2.29.7'
   }
 
   stages {
@@ -26,8 +27,19 @@ pipeline {
       steps {
         sh '''
           set -e
-          docker compose -f docker-compose.staging.yml down || true
-          BUILD_NUMBER='${BUILD_NUMBER}' docker compose -f docker-compose.staging.yml up -d
+          # Use docker/compose container so we don't need compose on the agent
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD":/workspace -w /workspace \
+            ${COMPOSE_IMG} \
+            compose -f docker-compose.staging.yml down || true
+
+          docker run --rm \
+            -e BUILD_NUMBER="$BUILD_NUMBER" \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD":/workspace -w /workspace \
+            ${COMPOSE_IMG} \
+            compose -f docker-compose.staging.yml up -d --remove-orphans
         '''
       }
     }
@@ -52,8 +64,18 @@ pipeline {
         }
         sh '''
           set -e
-          docker compose -f docker-compose.prod.yml down || true
-          BUILD_NUMBER='${BUILD_NUMBER}' docker compose -f docker-compose.prod.yml up -d
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD":/workspace -w /workspace \
+            ${COMPOSE_IMG} \
+            compose -f docker-compose.prod.yml down || true
+
+          docker run --rm \
+            -e BUILD_NUMBER="$BUILD_NUMBER" \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD":/workspace -w /workspace \
+            ${COMPOSE_IMG} \
+            compose -f docker-compose.prod.yml up -d --remove-orphans
         '''
       }
     }
