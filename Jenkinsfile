@@ -2,22 +2,16 @@ pipeline {
   agent any
   options { timestamps(); ansiColor('xterm') }
 
-  parameters {
-    booleanParam(name: 'RELEASE_PROD', defaultValue: false,
-      description: 'Promote this build to Production after staging deployment')
-  }
-
   environment {
     STAGING_URL = 'http://localhost:8090'
     PROD_URL    = 'http://localhost:9090'
     APP_IMAGE   = 'bookstore-app'
-    COMPOSE_IMG = 'docker/compose:latest'  // ✅ use a valid tag
+    COMPOSE_IMG = 'docker/compose:1.29.2'     // ✅ v1 image
+    COMPOSE_CMD = 'docker-compose'            // ✅ v1 command
   }
 
   stages {
-    stage('Checkout') {
-      steps { checkout scm }
-    }
+    stage('Checkout') { steps { checkout scm } }
 
     stage('Docker Build (includes Vite build)') {
       steps { sh 'docker build -t ${APP_IMAGE}:${BUILD_NUMBER} .' }
@@ -27,19 +21,19 @@ pipeline {
       steps {
         sh '''
           set -e
-          # Use docker/compose container so we don't need compose on the agent
-          docker run --rm \
+          # Use Compose v1 image; force amd64 on arm64 host
+          docker run --rm --platform linux/amd64 \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v "$PWD":/workspace -w /workspace \
             ${COMPOSE_IMG} \
-            compose -f docker-compose.staging.yml down || true
+            ${COMPOSE_CMD} -f docker-compose.staging.yml down || true
 
-          docker run --rm \
+          docker run --rm --platform linux/amd64 \
             -e BUILD_NUMBER="$BUILD_NUMBER" \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v "$PWD":/workspace -w /workspace \
             ${COMPOSE_IMG} \
-            compose -f docker-compose.staging.yml up -d --remove-orphans
+            ${COMPOSE_CMD} -f docker-compose.staging.yml up -d --remove-orphans
         '''
       }
     }
@@ -64,18 +58,18 @@ pipeline {
         }
         sh '''
           set -e
-          docker run --rm \
+          docker run --rm --platform linux/amd64 \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v "$PWD":/workspace -w /workspace \
             ${COMPOSE_IMG} \
-            compose -f docker-compose.prod.yml down || true
+            ${COMPOSE_CMD} -f docker-compose.prod.yml down || true
 
-          docker run --rm \
+          docker run --rm --platform linux/amd64 \
             -e BUILD_NUMBER="$BUILD_NUMBER" \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v "$PWD":/workspace -w /workspace \
             ${COMPOSE_IMG} \
-            compose -f docker-compose.prod.yml up -d --remove-orphans
+            ${COMPOSE_CMD} -f docker-compose.prod.yml up -d --remove-orphans
         '''
       }
     }
