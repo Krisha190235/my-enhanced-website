@@ -1,0 +1,13 @@
+version: "3.9"
+services:
+  web:
+    image: "bookstore-app:${BUILD_NUMBER}"   # Jenkins injects BUILD_NUMBER
+    container_name: "bookstore-staging"
+    ports:
+      - "8090:80"                            # Nginx in container serves on 80
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost/ || exit 1"]
+      interval: 10s
+      timeout: 2s
+      retries: 6

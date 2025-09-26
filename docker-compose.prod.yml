@@ -1,0 +1,14 @@
+version: "3.9"
+services:
+  web:
+    image: "bookstore-app:${BUILD_NUMBER}"   # promote tested tag to prod
+    container_name: "bookstore-prod"
+    # expose on a different host port or use 80 if this is your main host
+    ports:
+      - "8081:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost/ || exit 1"]
+      interval: 10s
+      timeout: 2s
+      retries: 6
