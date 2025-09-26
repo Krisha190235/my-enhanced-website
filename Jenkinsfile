@@ -6,17 +6,13 @@ pipeline {
     ansiColor('xterm')
   }
 
-  environment {
-    // Use your Jenkins NodeJS tool named "node20"
-    NODEJS_HOME = tool name: 'node20', type: 'jenkins.plugins.nodejs.tools.NodeJSInstallation'
-    PATH = "${NODEJS_HOME}/bin:${PATH}"
+  tools {
+    nodejs 'node20'   // Your Jenkins NodeJS tool name
   }
 
   stages {
     stage('Checkout') {
-      steps {
-        checkout scm
-      }
+      steps { checkout scm }
     }
 
     stage('Build (Vite)') {
@@ -93,19 +89,22 @@ pipeline {
       steps {
         sh '''
           set -e
-          echo "🔎 Waiting for http://localhost:8090 to be ready..."
+          echo "🔎 Waiting for container health (bookstore-staging)..."
           ATTEMPTS=30
           SLEEP=2
-          URL="http://localhost:8090"
           for i in $(seq 1 "$ATTEMPTS"); do
-            if curl -fsSL "$URL/" >/dev/null; then
-              echo "✅ App is up"
+            STATUS="$(docker inspect -f '{{.State.Health.Status}}' bookstore-staging 2>/dev/null || echo starting)"
+            if [ "$STATUS" = "healthy" ]; then
+              echo "✅ Container is healthy"
+              # Sanity check FROM INSIDE the container to avoid host/localhost confusion
+              docker exec bookstore-staging sh -lc 'curl -fsS http://localhost:3000/ >/dev/null'
+              echo "✅ App responded to internal curl"
               exit 0
             fi
-            echo "⏳ ($i/$ATTEMPTS) Not ready yet, sleeping ${SLEEP}s..."
+            echo "⏳ ($i/$ATTEMPTS) Status: $STATUS — retrying in ${SLEEP}s..."
             sleep "$SLEEP"
           done
-          echo "❌ App did not become ready in time. Showing last logs:"
+          echo "❌ App did not become healthy in time. Showing last logs:"
           docker logs --tail=200 bookstore-staging || true
           exit 1
         '''
@@ -113,7 +112,7 @@ pipeline {
     }
 
     stage('Release: Production (Optional)') {
-      when { expression { false } } // enable later if needed
+      when { expression { false } } // enable later if/when needed
       steps {
         echo 'Production release step is disabled for now.'
       }
