@@ -6,27 +6,13 @@ pipeline {
     ansiColor('xterm')
   }
 
-  // If you use the Jenkins "NodeJS" plugin, set this name to match your installation (Manage Jenkins > Tools).
-  tools {
-    nodejs 'node20'   // <-- change if your NodeJS tool has a different name
-  }
-
   environment {
-    APP_NAME     = 'bookstore-app'
-    STAGING_NAME = 'bookstore-staging'
-    PROD_NAME    = 'bookstore-prod'
-    STAGING_PORT = '8090'  // host port
-    CONTAINER_PORT = '3000'// container port (your app must listen here)
-    NODE_ENV     = 'production'
-    DOCKER_BUILDKIT = '1'
-  }
-
-  parameters {
-    booleanParam(name: 'RELEASE_PROD', defaultValue: false, description: 'Promote this build to Production after staging deployment')
+    // Use your Jenkins NodeJS tool named "node20"
+    NODEJS_HOME = tool name: 'node20', type: 'jenkins.plugins.nodejs.tools.NodeJSInstallation'
+    PATH = "${NODEJS_HOME}/bin:${PATH}"
   }
 
   stages {
-
     stage('Checkout') {
       steps {
         checkout scm
@@ -39,41 +25,44 @@ pipeline {
           set -e
           echo "🔧 Using Node: $(node -v)"
           echo "🔧 Using npm : $(npm -v)"
-
-          # Install deps (include dev so vite is available)
           npm ci --include=dev
-
-          # Build with vite
           npx vite build
-
-          # Show build output briefly
-          ls -l dist || true
+          ls -l dist
         '''
       }
       post {
         success {
-          archiveArtifacts artifacts: 'dist/**', fingerprint: true, onlyIfSuccessful: true
+          archiveArtifacts artifacts: 'dist/**,dist/index.html', fingerprint: true
         }
       }
     }
 
     stage('Test (Optional)') {
       steps {
-        // Your project has no tests; keep non-failing
-        sh 'npm test -- --passWithNoTests || echo "No tests found — skipping."'
+        sh '''
+          if npm run | grep -qE '^ *test '; then
+            npm test -- --passWithNoTests
+          else
+            echo "No tests found — skipping."
+          fi
+        '''
       }
     }
 
     stage('Lint (Optional)') {
       steps {
-        // No eslint config yet—don’t fail the pipeline
-        sh 'npx eslint src || true'
+        sh '''
+          if [ -f eslint.config.js ] || [ -f eslint.config.cjs ] || [ -f eslint.config.mjs ]; then
+            npx eslint src || true
+          else
+            echo "No ESLint config (eslint.config.js) — skipping."
+          fi
+        '''
       }
     }
 
     stage('Security (npm audit)') {
       steps {
-        // Informational only
         sh 'npm audit --audit-level=moderate || true'
       }
     }
@@ -82,7 +71,9 @@ pipeline {
       steps {
         sh '''
           set -e
-          docker build -t ${APP_NAME}:${BUILD_NUMBER} .
+          IMAGE="bookstore-app:${BUILD_NUMBER}"
+          docker build -t "$IMAGE" .
+          echo "$IMAGE" > .image_name
         '''
       }
     }
@@ -91,80 +82,53 @@ pipeline {
       steps {
         sh '''
           set -e
-          # Stop/remove old container if exists
-          docker rm -f ${STAGING_NAME} || true
-
-          # Run new container; map host ${STAGING_PORT} -> container ${CONTAINER_PORT}
-          docker run -d \
-            --name ${STAGING_NAME} \
-            -p ${STAGING_PORT}:${CONTAINER_PORT} \
-            --restart=unless-stopped \
-            ${APP_NAME}:${BUILD_NUMBER}
+          IMAGE="$(cat .image_name)"
+          docker rm -f bookstore-staging || true
+          docker run -d --name bookstore-staging -p 8090:3000 --restart=unless-stopped "$IMAGE"
         '''
       }
     }
 
     stage('Smoke Check (Staging)') {
       steps {
-        // Retry loop so we don't fail before server is ready
         sh '''
           set -e
-          echo "🔎 Waiting for http://localhost:${STAGING_PORT} to be ready..."
+          echo "🔎 Waiting for http://localhost:8090 to be ready..."
           ATTEMPTS=30
           SLEEP=2
-          URL="http://localhost:${STAGING_PORT}"
-
-          for i in $(seq 1 $ATTEMPTS); do
-            if curl -fsS "$URL" >/dev/null 2>&1; then
-              echo "✅ Staging is up: $URL"
+          URL="http://localhost:8090"
+          for i in $(seq 1 "$ATTEMPTS"); do
+            if curl -fsSL "$URL/" >/dev/null; then
+              echo "✅ App is up"
               exit 0
             fi
             echo "⏳ ($i/$ATTEMPTS) Not ready yet, sleeping ${SLEEP}s..."
-            sleep $SLEEP
+            sleep "$SLEEP"
           done
-
           echo "❌ App did not become ready in time. Showing last logs:"
-          docker logs --tail=200 ${STAGING_NAME} || true
+          docker logs --tail=200 bookstore-staging || true
           exit 1
         '''
       }
     }
 
     stage('Release: Production (Optional)') {
-      when { expression { return params.RELEASE_PROD } }
+      when { expression { false } } // enable later if needed
       steps {
-        script {
-          input message: "Promote build #${env.BUILD_NUMBER} to Production?", ok: 'Deploy'
-        }
-        sh '''
-          set -e
-          docker rm -f ${PROD_NAME} || true
-          # example production port 9090->3000 (adjust as you like)
-          docker run -d \
-            --name ${PROD_NAME} \
-            -p 9090:${CONTAINER_PORT} \
-            --restart=unless-stopped \
-            ${APP_NAME}:${BUILD_NUMBER}
-        '''
+        echo 'Production release step is disabled for now.'
       }
     }
   }
 
   post {
-    success {
-      echo "✅ Build #${env.BUILD_NUMBER} succeeded."
-      echo "   Staging:   http://localhost:${STAGING_PORT}"
-      echo "   To release to production, re-run with RELEASE_PROD=true."
-    }
-    failure {
-      echo "❌ Build failed. Check logs in Jenkins."
-      sh 'docker ps -a || true'
-      sh 'docker logs --tail=200 ${STAGING_NAME} || true'
-    }
     always {
-      // Optional: prune old images/containers to save space
       sh 'docker image prune -f || true'
       sh 'docker container prune -f || true'
+      sh 'docker ps -a || true'
+      sh 'docker logs --tail=200 bookstore-staging || true'
+    }
+    failure {
+      echo '❌ Build failed. Check logs in Jenkins.'
     }
   }
 }
