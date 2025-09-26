@@ -1,6 +1,11 @@
 pipeline {
   agent any
 
+  tools {
+    // 👇 This tells Jenkins to use the NodeJS installation you configured under Manage Jenkins → Tools
+    nodejs 'node20'  // <-- change 'node20' if you gave it a different name
+  }
+
   options {
     timestamps()
     ansiColor('xterm')
@@ -31,6 +36,8 @@ pipeline {
       steps {
         sh '''
           set -e
+          echo "🔧 Using Node version: $(node -v)"
+          echo "🔧 Using npm version: $(npm -v)"
           npm ci
           npm run build
         '''
