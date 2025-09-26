@@ -81,7 +81,7 @@ pipeline {
         sh '''
           set -e
           docker rm -f ${STAGING_NAME} || true
-          docker run -d --name ${STAGING_NAME} -p ${STAGING_PORT}:80 --restart=unless-stopped ${APP_NAME}:${BUILD_NUMBER}
+          docker run -d --name ${STAGING_NAME} -p ${STAGING_PORT}:3000 --restart=unless-stopped ${APP_NAME}:${BUILD_NUMBER}
         '''
       }
     }
