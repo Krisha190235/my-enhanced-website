@@ -4,14 +4,15 @@ pipeline {
   options {
     ansiColor('xterm')
     timestamps()
-    buildDiscarder(logRotator(numToKeepStr: '20'))
     timeout(time: 30, unit: 'MINUTES')
   }
 
   environment {
-    APP_NAME      = 'bookstore-app'
-    STAGING_NAME  = 'bookstore-staging'
-    STAGING_PORT  = '8090'          // host port → container:3000
+    APP_NAME     = 'bookstore-app'
+    STAGING_NAME = 'bookstore-staging'
+    STAGING_PORT = '8090'         // host port; container listens on 3000
+    IMAGE_TAG    = "${env.BUILD_NUMBER}"
+    NODE_IMAGE   = 'node:20.11.0-alpine'
   }
 
   stages {
@@ -25,44 +26,34 @@ pipeline {
       steps {
         sh '''
           set -e
-          echo "🔧 Using Node: $(node -v)"
-          echo "🔧 Using npm : $(npm -v)"
-          npm ci --include=dev
-          npx vite build
-          ls -l dist || true
+          echo "🔧 Using Node inside ${NODE_IMAGE}"
+          docker run --rm -v "$PWD":/app -w /app ${NODE_IMAGE} sh -lc '
+            node -v || true
+            npm -v  || true
+            npm ci --include=dev
+            npx vite build
+            ls -l dist
+          '
         '''
-      }
-      post {
-        success {
-          archiveArtifacts artifacts: 'dist/**', fingerprint: true
-        }
       }
     }
 
     stage('Test (Optional)') {
       steps {
-        // Don’t fail if there are no tests
         sh '''
-          set +e
-          npm test -- --passWithNoTests
-          if [ $? -ne 0 ]; then
-            echo "No tests found — skipping."
-          fi
+          docker run --rm -v "$PWD":/app -w /app ${NODE_IMAGE} sh -lc '
+            npm test -- --passWithNoTests || echo "No tests found — skipping."
+          '
         '''
       }
     }
 
     stage('Lint (Optional)') {
       steps {
-        // Only run if an ESLint config exists; never fail the build here
         sh '''
-          set +e
-          if [ -f eslint.config.js ] || [ -f .eslintrc.js ] || [ -f .eslintrc.cjs ] || [ -f .eslintrc.json ] || [ -f .eslintrc ]; then
-            echo "Running ESLint…"
+          docker run --rm -v "$PWD":/app -w /app ${NODE_IMAGE} sh -lc '
             npx eslint src || true
-          else
-            echo "No ESLint config — skipping."
-          fi
+          '
         '''
       }
     }
@@ -70,18 +61,16 @@ pipeline {
     stage('Security (npm audit)') {
       steps {
         sh '''
-          set +e
-          npm audit --audit-level=moderate || true
+          docker run --rm -v "$PWD":/app -w /app ${NODE_IMAGE} sh -lc "
+            npm audit --audit-level=moderate || true
+          "
         '''
       }
     }
 
     stage('Docker Build') {
       steps {
-        sh '''
-          set -e
-          docker build -t ${APP_NAME}:${BUILD_NUMBER} .
-        '''
+        sh 'docker build -t ${APP_NAME}:${IMAGE_TAG} .'
       }
     }
 
@@ -89,58 +78,49 @@ pipeline {
       steps {
         sh '''
           set -e
-          docker rm -f ${STAGING_NAME} >/dev/null 2>&1 || true
+          docker rm -f ${STAGING_NAME} || true
           docker run -d --name ${STAGING_NAME} \
             -p ${STAGING_PORT}:3000 \
             --restart=unless-stopped \
-            ${APP_NAME}:${BUILD_NUMBER}
+            ${APP_NAME}:${IMAGE_TAG}
         '''
       }
     }
 
     stage('Smoke Check (Staging)') {
       steps {
-        // Probe the app from *inside* the container so we don’t depend on host networking
         sh '''
           set -e
-          echo "🔎 Probing inside container on http://localhost:3000 ..."
+          echo "🔎 Waiting for http://localhost:${STAGING_PORT} to be ready..."
           ATTEMPTS=30
           SLEEP=2
+          URL="http://localhost:${STAGING_PORT}"
           for i in $(seq 1 $ATTEMPTS); do
-            if docker exec ${STAGING_NAME} sh -c "wget -qO- http://localhost:3000 >/dev/null 2>&1 || curl -fsS http://localhost:3000 >/dev/null 2>&1"; then
-              echo "✅ App is responding inside container (attempt $i)."
+            if curl -fsS "$URL" >/dev/null; then
+              echo "✅ App is up at $URL"
               exit 0
             fi
-            echo "⏳ ($i/${ATTEMPTS}) Not ready yet, sleeping ${SLEEP}s..."
+            echo "⏳ ($i/$ATTEMPTS) Not ready yet, sleeping ${SLEEP}s..."
             sleep $SLEEP
           done
           echo "❌ App did not become ready in time. Showing last logs:"
-          docker logs --tail=200 ${STAGING_NAME}
+          docker logs --tail=200 ${STAGING_NAME} || true
           exit 1
         '''
       }
     }
-
-    // Example placeholder for production (disabled by default)
-    // stage('Release: Production (Optional)') {
-    //   when { expression { return false } } // flip to true when ready
-    //   steps {
-    //     echo 'Ship it 🚀 (implement push/run for prod here)'
-    //   }
-    // }
   }
 
   post {
     always {
-      sh 'docker ps -a || true'
       echo '🧹 Pruning old images/containers (safe to ignore failures)…'
       sh 'docker image prune -f || true'
       sh 'docker container prune -f || true'
-      echo '🏁 Pipeline done.'
-    }
-    failure {
-      echo '❌ Build failed. Check logs in Jenkins.'
+      sh 'docker ps -a'
       sh 'docker logs --tail=200 ${STAGING_NAME} || true'
+    }
+    unsuccessful {
+      echo '❌ Build failed. Check logs in Jenkins.'
     }
   }
 }
