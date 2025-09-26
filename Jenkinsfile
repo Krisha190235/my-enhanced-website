@@ -2,31 +2,19 @@ pipeline {
   agent any
 
   options {
-    timestamps()
     ansiColor('xterm')
-  }
-
-  // If you use the Jenkins "NodeJS" plugin, set this name to match your installation (Manage Jenkins > Tools).
-  tools {
-    nodejs 'node20'   // <-- change if your NodeJS tool has a different name
+    timestamps()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+    timeout(time: 30, unit: 'MINUTES')
   }
 
   environment {
-    APP_NAME     = 'bookstore-app'
-    STAGING_NAME = 'bookstore-staging'
-    PROD_NAME    = 'bookstore-prod'
-    STAGING_PORT = '8090'  // host port
-    CONTAINER_PORT = '3000'// container port (your app must listen here)
-    NODE_ENV     = 'production'
-    DOCKER_BUILDKIT = '1'
-  }
-
-  parameters {
-    booleanParam(name: 'RELEASE_PROD', defaultValue: false, description: 'Promote this build to Production after staging deployment')
+    APP_NAME      = 'bookstore-app'
+    STAGING_NAME  = 'bookstore-staging'
+    STAGING_PORT  = '8090'          // host port → container:3000
   }
 
   stages {
-
     stage('Checkout') {
       steps {
         checkout scm
@@ -39,42 +27,52 @@ pipeline {
           set -e
           echo "🔧 Using Node: $(node -v)"
           echo "🔧 Using npm : $(npm -v)"
-
-          # Install deps (include dev so vite is available)
           npm ci --include=dev
-
-          # Build with vite
           npx vite build
-
-          # Show build output briefly
           ls -l dist || true
         '''
       }
       post {
         success {
-          archiveArtifacts artifacts: 'dist/**', fingerprint: true, onlyIfSuccessful: true
+          archiveArtifacts artifacts: 'dist/**', fingerprint: true
         }
       }
     }
 
     stage('Test (Optional)') {
       steps {
-        // Your project has no tests; keep non-failing
-        sh 'npm test -- --passWithNoTests || echo "No tests found — skipping."'
+        // Don’t fail if there are no tests
+        sh '''
+          set +e
+          npm test -- --passWithNoTests
+          if [ $? -ne 0 ]; then
+            echo "No tests found — skipping."
+          fi
+        '''
       }
     }
 
     stage('Lint (Optional)') {
       steps {
-        // No eslint config yet—don’t fail the pipeline
-        sh 'npx eslint src || true'
+        // Only run if an ESLint config exists; never fail the build here
+        sh '''
+          set +e
+          if [ -f eslint.config.js ] || [ -f .eslintrc.js ] || [ -f .eslintrc.cjs ] || [ -f .eslintrc.json ] || [ -f .eslintrc ]; then
+            echo "Running ESLint…"
+            npx eslint src || true
+          else
+            echo "No ESLint config — skipping."
+          fi
+        '''
       }
     }
 
     stage('Security (npm audit)') {
       steps {
-        // Informational only
-        sh 'npm audit --audit-level=moderate || true'
+        sh '''
+          set +e
+          npm audit --audit-level=moderate || true
+        '''
       }
     }
 
@@ -91,13 +89,9 @@ pipeline {
       steps {
         sh '''
           set -e
-          # Stop/remove old container if exists
-          docker rm -f ${STAGING_NAME} || true
-
-          # Run new container; map host ${STAGING_PORT} -> container ${CONTAINER_PORT}
-          docker run -d \
-            --name ${STAGING_NAME} \
-            -p ${STAGING_PORT}:${CONTAINER_PORT} \
+          docker rm -f ${STAGING_NAME} >/dev/null 2>&1 || true
+          docker run -d --name ${STAGING_NAME} \
+            -p ${STAGING_PORT}:3000 \
             --restart=unless-stopped \
             ${APP_NAME}:${BUILD_NUMBER}
         '''
@@ -106,65 +100,47 @@ pipeline {
 
     stage('Smoke Check (Staging)') {
       steps {
-        // Retry loop so we don't fail before server is ready
+        // Probe the app from *inside* the container so we don’t depend on host networking
         sh '''
           set -e
-          echo "🔎 Waiting for http://localhost:${STAGING_PORT} to be ready..."
+          echo "🔎 Probing inside container on http://localhost:3000 ..."
           ATTEMPTS=30
           SLEEP=2
-          URL="http://localhost:${STAGING_PORT}"
-
           for i in $(seq 1 $ATTEMPTS); do
-            if curl -fsS "$URL" >/dev/null 2>&1; then
-              echo "✅ Staging is up: $URL"
+            if docker exec ${STAGING_NAME} sh -c "wget -qO- http://localhost:3000 >/dev/null 2>&1 || curl -fsS http://localhost:3000 >/dev/null 2>&1"; then
+              echo "✅ App is responding inside container (attempt $i)."
               exit 0
             fi
-            echo "⏳ ($i/$ATTEMPTS) Not ready yet, sleeping ${SLEEP}s..."
+            echo "⏳ ($i/${ATTEMPTS}) Not ready yet, sleeping ${SLEEP}s..."
             sleep $SLEEP
           done
-
           echo "❌ App did not become ready in time. Showing last logs:"
-          docker logs --tail=200 ${STAGING_NAME} || true
+          docker logs --tail=200 ${STAGING_NAME}
           exit 1
         '''
       }
     }
 
-    stage('Release: Production (Optional)') {
-      when { expression { return params.RELEASE_PROD } }
-      steps {
-        script {
-          input message: "Promote build #${env.BUILD_NUMBER} to Production?", ok: 'Deploy'
-        }
-        sh '''
-          set -e
-          docker rm -f ${PROD_NAME} || true
-          # example production port 9090->3000 (adjust as you like)
-          docker run -d \
-            --name ${PROD_NAME} \
-            -p 9090:${CONTAINER_PORT} \
-            --restart=unless-stopped \
-            ${APP_NAME}:${BUILD_NUMBER}
-        '''
-      }
-    }
+    // Example placeholder for production (disabled by default)
+    // stage('Release: Production (Optional)') {
+    //   when { expression { return false } } // flip to true when ready
+    //   steps {
+    //     echo 'Ship it 🚀 (implement push/run for prod here)'
+    //   }
+    // }
   }
 
   post {
-    success {
-      echo "✅ Build #${env.BUILD_NUMBER} succeeded."
-      echo "   Staging:   http://localhost:${STAGING_PORT}"
-      echo "   To release to production, re-run with RELEASE_PROD=true."
-    }
-    failure {
-      echo "❌ Build failed. Check logs in Jenkins."
-      sh 'docker ps -a || true'
-      sh 'docker logs --tail=200 ${STAGING_NAME} || true'
-    }
     always {
-      // Optional: prune old images/containers to save space
+      sh 'docker ps -a || true'
+      echo '🧹 Pruning old images/containers (safe to ignore failures)…'
       sh 'docker image prune -f || true'
       sh 'docker container prune -f || true'
+      echo '🏁 Pipeline done.'
+    }
+    failure {
+      echo '❌ Build failed. Check logs in Jenkins.'
+      sh 'docker logs --tail=200 ${STAGING_NAME} || true'
     }
   }
 }
