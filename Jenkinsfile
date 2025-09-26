@@ -11,7 +11,7 @@ pipeline {
     STAGING_URL = 'http://localhost:8090'
     PROD_URL    = 'http://localhost:9090'
     APP_IMAGE   = 'bookstore-app'
-    COMPOSE_IMG = 'docker/compose:2.29.7'
+    COMPOSE_IMG = 'docker/compose:latest'  // ✅ use a valid tag
   }
 
   stages {
