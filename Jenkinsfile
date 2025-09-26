@@ -19,9 +19,7 @@ pipeline {
     }
 
     stage('Docker Build (includes Vite build)') {
-      steps {
-        sh 'docker build -t ${APP_IMAGE}:${BUILD_NUMBER} .'
-      }
+      steps { sh 'docker build -t ${APP_IMAGE}:${BUILD_NUMBER} .' }
     }
 
     stage('Deploy: Staging (Docker Compose)') {
@@ -62,9 +60,7 @@ pipeline {
 
     stage('Smoke Check (Prod)') {
       when { expression { return params.RELEASE_PROD } }
-      steps {
-        sh "curl -fsS ${env.PROD_URL} >/dev/null"
-      }
+      steps { sh "curl -fsS ${env.PROD_URL} >/dev/null" }
     }
   }
 
