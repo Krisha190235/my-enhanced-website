@@ -1,14 +1,13 @@
-# --- build stage (Vite) ---
 FROM node:20.11.0-alpine AS build
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --include=dev
 COPY . .
-RUN npm run build
+RUN npx vite build
 
-# --- runtime (Nginx) ---
-FROM nginx:alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/dist /usr/share/nginx/html
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+FROM node:20.11.0-alpine
+WORKDIR /app
+RUN npm i -g serve
+COPY --from=build /app/dist ./dist
+EXPOSE 3000
+CMD ["serve", "-s", "dist", "-l", "3000"]
